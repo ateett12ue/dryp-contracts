@@ -3,20 +3,8 @@ pragma solidity ^0.8.0;
 
 /**
  * @title DRYP Token TreasuryCore contract
- * @notice The Treasury contract stores assets. On a deposit, Dryp Token will be minted
-           and sent to the depositor. On a withdrawal, Dryp Token will be burned and
-           assets will be sent to the withdrawer.
  * @author Ateet Tiwari
  */
-
-
-// treasury
-// Token 
-// Token Pool Contract -- price v2 Amm
-// Treasury Manager
-// Rebalancing -- redeem values
-
-
 
 import { SafeERC20 } from "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
 
@@ -54,26 +42,52 @@ contract TreasuryCore is TreasuryInitializer {
 
     modifier onlyRebalancer() {
         require(
-            msg.sender == ousdMetaStrategy,
+            msg.sender == _rebalancer,
             "Caller is not the OUSD meta strategy"
         );
         _;
     }
 
-    modifier onlyTreasuryManager() {
+    modifier onlyWhenTreasuryInitialized() {
         require(
-            msg.sender == admin,
-            "Caller is not the admin"
+            treasuryStarted == true,
+            "treasury not initialized"
         );
         _;
     }
 
-    modifier onlyAdmin() {
-        require(
-            msg.sender == treasuryManger,
-            "Caller is not the treasury admin"
-        );
-        _;
+    
+
+    /**
+     * @notice function to return the address of USDT token.
+     */
+    function usdt() public view virtual override returns (address) {
+        return _usdt;
+    }
+
+    /**
+     * @notice function to return the address of USDC token.
+     */
+    function usdc() public view virtual override returns (address) {
+        return _usdc;
+    }
+
+    /**
+     * @notice function to return the address of Dexspan.
+     */
+    function isTokenAllowed(address token) public view returns (bool) {
+        return mintTokens[token];
+    }
+
+    /**
+     * @notice function to return the address of AssetForwarder.
+     */
+    function getAllAssets() external view returns (address[] memory) {
+        return allAssets;
+    }
+
+    function isTreasuryStarted() external view returns (bool) {
+        return treasuryStarted;
     }
 
     /**
@@ -87,41 +101,39 @@ contract TreasuryCore is TreasuryInitializer {
         uint256 _amount,
         uint256 _minimumDrypAmount,
         address _recipient
-    ) external whenNotCapitalPaused onlyTreasuryManager {
+    ) external whenNotCapitalPaused onlyWhenTreasuryInitialized onlyRole(TREASURY_MANAGER) {
         _mint(_asset, _amount, _minimumDrypAmount, _recipient);
     }
 
     // pool usdt + 
     // pool dryp -
     function _mint(
-        address _asset,
-        uint256 _amount,
-        uint256 _minimumDrypAmount,
-        address _recipient
+        address __asset,
+        uint256 __amount,
+        uint256 __minimumDrypAmount,
+        address __recipient
     ) internal virtual {
-        require(mintTokens[_asset].allowed, "Asset is not supported");
-        require(_amount > 0, "Amount must be greater than 0");
-        require(_amount < mintTokens[_asset].maxAllowed, "Amount must be less than maxAllowed");
+        require(mintTokens[__asset].allowed, "Asset is not supported");
+        require(__amount > 0, "Amount must be greater than 0");
+        require(__amount < mintTokens[__asset].maxAllowed, "Amount must be less than maxAllowed");
 
-        // uint256 units = _toUnits(_amount, _asset);
-        // uint256 unitPrice = _toUnitPrice(_asset, true);
-        // hoping for 1-1 mapping
-        uint256 priceAdjustedDeposit = drypPool.getDrypAmount(_asset, _amount);
+        uint256 priceAdjustedDeposit = _drypPool.getDrypAmount(__amount);
 
-        if (_minimumDrypAmount > 0) {
+        if (__minimumDrypAmount > 0) {
             require(
-                priceAdjustedDeposit >= _minimumDrypAmount,
+                priceAdjustedDeposit >= __minimumDrypAmount,
                 "Mint amount lower than minimum"
             );
         }
 
-        emit Mint(recipient, priceAdjustedDeposit);
+        emit Mint(__recipient, priceAdjustedDeposit);
         // Mint matching amount of Dryp
-        dryp.mint(recipient, priceAdjustedDeposit);
+        _dryp.mint(__recipient, priceAdjustedDeposit);
 
-        // Transfer the deposited coins to the Stable Pool
-        IERC20 asset = IERC20(_asset);
-        asset.safeTransferFrom(msg.sender, address(revenue), _amount);
+        // Transfer the deposited coins to the treasury as revenue
+        IERC20 asset = IERC20(__asset);
+        asset.safeTransferFrom(msg.sender, address(this), __amount);
+        revenue[__asset] = amount;
     }
 
     /**
@@ -129,33 +141,31 @@ contract TreasuryCore is TreasuryInitializer {
      * @param _amount Amount of Dryp to burn
      * @param _minimumUnitAmount Minimum stablecoin units to receive in return
      */
-    function redeemAssets(uint256 _amount, uint256 _minimumUnitAmount, address _recipient)
+    function redeemAssets(uint256 _amount, address _recipient)
         external
         whenNotCapitalPaused
         nonReentrant
-        onlyTreasuryManager
+        onlyWhenTreasuryInitialized
+        onlyRole(TREASURY_MANAGER)
     {
         _redeem(_amount, _minimumUnitAmount, _recipient);
     }
 
     /**
      * @notice Withdraw a supported asset and burn Dryp.
-     * @param _amount Amount of Dryp to burn
-     * @param _minimumUnitAmount Minimum stablecoin units to receive in return
+     * @param __amount Amount of Dryp to burn
+     * @param __minimumUnitAmount Minimum stablecoin units to receive in re
+     * @param __recipient user getting funds
      */
-    function _redeem(uint256 _amount, uint256 _minimumUnitAmount, address _recipient)
+    function _redeem(uint256 __amount, address __recipient)
         internal
         virtual
-    {
-        // Calculate redemption outputs
-        bool redeemApproved = _preRedeem(_amount);
-        if(!redeemApproved)
-        {
-            revert("Locked value not matched")
-        }
-        uint256[] memory outputs = _calculateRedeemOutputs(_amount);
+    {  
+        require(__amount > 0, "Redeem amount must be greater than 0");
+        uint256 usdtRedeemValue = _drypPool.getRedeemValue(__amount);
+        uint256[] memory outputs = _calculateRedeemOutputs(__amount);
 
-        emit Redeem(_recipient, _amount);
+        emit Redeem(__recipient, __amount);
 
         // Send outputs
         uint256 assetCount = allAssets.length;
@@ -163,133 +173,53 @@ contract TreasuryCore is TreasuryInitializer {
             if (outputs[i] == 0) continue;
 
             address assetAddr = allAssets[i];
-
-            if(output[i] < redeemBasked[address(assetAddr)].value)
+            
+            uint256 assetBalance = IERC20(assetAddr).balanceOf(address(this));
+            if(output[i] > assetBalance)
             {
                 revert("not available for redeem")
             }
             if (IERC20(assetAddr).balanceOf(address(this)) >= outputs[i]) {
-                // Use tresury funds first if sufficient
-                IERC20(assetAddr).safeTransfer(_recipient, outputs[i]);
+                IERC20(assetAddr).safeTransfer(__recipient, outputs[i]);
             } else {
                 revert("Liquidity error");
-                // address rebalAdd = assetDefaultStrategies[assetAddr];
-                // if (rebalAdd != address(0)) {
-                //     // Nothing in Vault, but something in Strategy, send from there
-                //     IReblancer rebalancer = IReblancer(rebalAdd);
-                //     rebalancer.withdraw(msg.sender, assetAddr, outputs[i]);
-                // } else {
-                //     // Cant find funds anywhere
-                //     revert("Liquidity error");
-                // }
             }
         }
 
-        // if (_minimumUnitAmount > 0) {
-        //     uint256 unitTotal = 0;
-        //     for (uint256 i = 0; i < outputs.length; ++i) {
-        //         unitTotal += _toUnits(outputs[i], allAssets[i]);
-        //     }
-        //     require(
-        //         unitTotal >= _minimumUnitAmount,
-        //         "Redeem amount lower than minimum"
-        //     );
-        // }
-
-        dryp.burn(_recipient, _amount);
+        // send back from user to dryp
+        dryp.burn(__recipient, __amount);
 
         _postRedeem(outputs);
     }
 
-    function _preRedeem(uint256 _amount) internal  returns (bool){
-        require(_amount > 0, "dryp amount can't be zero");
-        uint256 lockedValue = revenue.totalLocked();
-        uint256 redeemValueFromPool = pool.getRedeemValue(_amount);
-        require(redeemValueFromPool > 0, "Redeem failed");
-
-        if(lockedValue > redeemValueFromPool)
-        {
-            return true;
-        }
-        else
-        {
-            return false
-        }
-    }
-
     function _postRedeem(uint256[] outputs) internal {
-        // Until we can prove that we won't affect the prices of our assets
-        // by withdrawing them, this should be here.
-        // It's possible that a redeem was off on its asset total, perhaps
-        // a reward token sold for more or for less than anticipated.
+        uint256 assetCount = allAssets.length;
+        uint256 vaultValue = _totalValue();
         for (uint256 i = 0; i < assetCount; ++i) {
             if (outputs[i] == 0) continue;
 
             address assetAddr = allAssets[i];
-
-            if(output[i] < redeemBasked[address(assetAddr)].value)
-            {
-                revert("not available for redeem")
-            }
-            if (redeemBasked[address(assetAddr)].value >= outputs[i]) {
-                // Use tresury funds first if sufficient
-               redeemBasked[address(assetAddr)].value = redeemBasked[address(assetAddr)].value - outputs[i]
-            } else {
-                revert("Liquidity error");
-                // address rebalAdd = assetDefaultStrategies[assetAddr];
-                // if (rebalAdd != address(0)) {
-                //     // Nothing in Vault, but something in Strategy, send from there
-                //     IReblancer rebalancer = IReblancer(rebalAdd);
-                //     rebalancer.withdraw(msg.sender, assetAddr, outputs[i]);
-                // } else {
-                //     // Cant find funds anywhere
-                //     revert("Liquidity error");
-                // }
-            }
+            uint256 assetUsdtValue = redeemBasketAssets[address(assetAddr)].priceInUsdt;
+            uint256 outputValueInUsdt = _toUnitsPrice(redeemBasketAssets[address(assetAddr)].decimal, output[i])
+            uint256 assetValueRedeemed = outputValueInUsdt*assetUsdtValue;
+            vaultValue = vaultValue - assetValueRedeemed;  
+        }
+        if(vaultValue > 0)
+        {
+            updateTotalValue(vaultValue);
+        }
+        else
+        {
+            revert("vault emptied")
         }
     }
-    /**
-     * @notice Calculate the total value of assets held by the Vault and all
-     *      strategies and update the supply of dryp.
-     */
-    function rebase() external virtual nonReentrant {
-        _rebase();
-    }
 
-    /**
-     * @dev Calculate the total value of assets held by the Vault and all
-     *      strategies and update the supply of OTokens, optionally sending a
-     *      portion of the yield to the trustee.
-     * @return totalUnits Total balance of Vault in units
-     */
-    function _rebase() internal whenNotRebasePaused returns (uint256) {
-        uint256 drypSupply = dryp.totalSupply();
-        uint256 vaultValue = _totalValue();
-        uint256 valueLocked = revenue.totalValueLocked();
-        if (drypSupply == 0) {
-            return vaultValue;
-        }
-
-        // Yield fee collection
-        address _trusteeAddress = revenueAddress; // gas savings
-        if (_trusteeAddress != address(0) && (vaultValue > drypSupply)) {
-            
-        }
-
-        // Only rachet OToken supply upwards
-        ousdSupply = oUSD.totalSupply(); // Final check should use latest value
-        if (vaultValue > ousdSupply) {
-            oUSD.changeSupply(vaultValue);
-        }
-        return vaultValue;
-    }
-
-    /**
+    /*
      * @notice Determine the total value of assets held by the vault and its
      *         strategies.
      * @return value Total value in USD/ETH (1e18)
      */
-    function totalValue() external view virtual returns (uint256 value) {
+    function totalValue() external view virtual onlyWhenTreasuryInitialized returns (uint256 value) {
         value = _totalValue();
     }
 
@@ -298,27 +228,36 @@ contract TreasuryCore is TreasuryInitializer {
      *         vault and its strategies.
      * @return value Total value in USD/ETH (1e18)
      */
-    function _totalValue() internal view virtual returns (uint256 value) {
-        return _totalValueInVault() + _totalValueInStrategies();
+    function _totalValueRedeemable() public view virtual onlyWhenTreasuryInitialized returns (uint256 value) {
+        uint256 assetCount = allAssets.length;
+        for (uint256 i = 0; i < assetCount; ++i) {
+            address assetAddr = allAssets[y];
+            uint256 balance = IERC20(assetAddr).balanceOf(address(this));
+            if (balance > 0) {
+                uint256 outputValueInUsdt = _toUnitsPrice(redeemBasketAssets[address(assetAddr)].decimal, balance);
+                value += outputValueInUsdt*redeemBasketAssets[address(assetAddr)].priceInUsdt;
+            }
+        }
     }
 
     /**
      * @dev Internal to calculate total value of all assets held in Vault.
      * @return value Total value in USD/ETH (1e18)
      */
-    function _totalValueInVault() internal view returns (uint256 value) {
+    function _totalValueNoRedeemable() public view virtual onlyWhenTreasuryInitialized returns (uint256 value) {
         uint256 assetCount = allAssets.length;
-        for (uint256 y = 0; y < assetCount; ++y) {
+        for (uint256 i = 0; i < assetCount; ++i) {
             address assetAddr = allAssets[y];
             uint256 balance = IERC20(assetAddr).balanceOf(address(this));
             if (balance > 0) {
-                value += _toUnits(balance, assetAddr);
+                uint256 outputValueInUsdt = _toUnitsPrice(unredeemBasketAssets[address(assetAddr)].decimal, balance);
+                value += outputValueInUsdt*unredeemBasketAssets[address(assetAddr)].priceInUsdt;
             }
         }
     }
 
-    function _totalValueLocked() internal view returns (uint256 value) {
-        uint256 lockedRevenue =  revenue.getLocked();
+    function _totalValueLocked() public view onlyWhenTreasuryInitialized returns (uint256 value) {
+        uint256 lockedRevenue =  IERC20(_usdt).balanceOf(address(this));
         return lockedRevenue
     }
 
@@ -356,6 +295,7 @@ contract TreasuryCore is TreasuryInitializer {
     function calculateRedeemOutputs(uint256 _amount)
         external
         view
+        onlyWhenTreasuryInitialized
         returns (uint256[] memory)
     {
         return _calculateRedeemOutputs(_amount);
@@ -370,11 +310,11 @@ contract TreasuryCore is TreasuryInitializer {
         internal
         view
         virtual
+        onlyWhenTreasuryInitialized
         returns (uint256[] memory outputs)
     {
         uint256 assetCount = allAssets.length;
-        uint256[] memory assetUnits = new uint256[](assetCount);
-        uint256[] memory assetBalances = new uint256[](assetCount);
+        uint256 totalUsdtValue = 0;
         outputs = new uint256[](assetCount);
 
         // Calculate assets balances and decimals once,
@@ -382,23 +322,22 @@ contract TreasuryCore is TreasuryInitializer {
         uint256 totalUnits = 0;
         for (uint256 i = 0; i < assetCount; ++i) {
             address assetAddr = allAssets[i];
-            uint256 balance = _checkBalance(assetAddr);
-            assetBalances[i] = balance;
-            assetUnits[i] = _toUnits(balance, assetAddr);
-            totalUnits = totalUnits + assetUnits[i];
+            TreasuryAsset memory asset = redeemBasketAssets[assetAddress];
+            if (asset.isSupported) {
+                totalUsdtValue += (asset.priceInUsdt * asset.allotedPercentage) / 100;
+            }
         }
         // Calculate totalOutputRatio
-        uint256 totalOutputRatio = 0;
         for (uint256 i = 0; i < assetCount; ++i) {
-            uint256 unitPrice = _toUnitPrice(allAssets[i], false);
-            uint256 ratio = (assetUnits[i] * unitPrice) / totalUnits;
-            totalOutputRatio = totalOutputRatio + ratio;
+            address assetAddress = allAssets[i];
+            TreasuryAsset memory asset = redeemBasketAssets[assetAddress];
+            if (asset.isSupported) {
+                uint256 assetValueInUsdt = (asset.priceInUsdt * asset.allotedPercentage) / 100;
+                uint256 amountToRedeem = (redeemAmount * assetValueInUsdt) / totalUsdtValue;
+                outputs[i] = amountToRedeem
+            }
         }
-        // Calculate final outputs
-        uint256 factor = _amount.divPrecisely(totalOutputRatio);
-        for (uint256 i = 0; i < assetCount; ++i) {
-            outputs[i] = (assetBalances[i] * factor) / totalUnits;
-        }
+        return outputs;
     }
 
     /***************************************
@@ -468,85 +407,18 @@ contract TreasuryCore is TreasuryInitializer {
      * @param _asset Core Asset address
      * @return value 1e18 normalized quantity of units
      */
-    function _toUnits(uint256 _raw, address _asset)
+    function _toUnitsPrice( uint256 _decimal, uint256 _amount)
         internal
         view
         returns (uint256)
     {
-        UnitConversion conversion = assets[_asset].unitConversion;
-        if (conversion == UnitConversion.DECIMALS) {
-            return _raw.scaleBy(18, _getDecimals(_asset));
-        } else if (conversion == UnitConversion.GETEXCHANGERATE) {
-            uint256 exchangeRate = IGetExchangeRateToken(_asset)
-                .getExchangeRate();
-            return (_raw * exchangeRate) / 1e18;
-        } else {
-            revert("Unsupported conversion type");
+        uint256 usdtDecimal = 6;
+        if (assetDecimal == 6) {
+            return _amount;
+        } else{
+           uint256 _rawAdjusted= _amount.scaleBy(6, _decimal);
+           return _rawAdjusted
         }
-    }
-
-    /**
-     * @dev Returns asset's unit price accounting for different asset types
-     *      and takes into account the context in which that price exists -
-     *      - mint or redeem.
-     *
-     * Note: since we are returning the price of the unit and not the one of the
-     * asset (see comment above how 1 rETH exchanges for 1.2 units) we need
-     * to make the Oracle price adjustment as well since we are pricing the
-     * units and not the assets.
-     *
-     * The price also snaps to a "full unit price" in case a mint or redeem
-     * action would be unfavourable to the protocol.
-     *
-     */
-    function _toUnitPrice(address _asset, bool isMint)
-        internal
-        view
-        returns (uint256 price)
-    {
-        UnitConversion conversion = assets[_asset].unitConversion;
-        price = IOracle(priceProvider).price(_asset);
-
-        if (conversion == UnitConversion.GETEXCHANGERATE) {
-            uint256 exchangeRate = IGetExchangeRateToken(_asset)
-                .getExchangeRate();
-            price = (price * 1e18) / exchangeRate;
-        } else if (conversion != UnitConversion.DECIMALS) {
-            revert("Unsupported conversion type");
-        }
-
-        /* At this stage the price is already adjusted to the unit
-         * so the price checks are agnostic to underlying asset being
-         * pegged to a USD or to an ETH or having a custom exchange rate.
-         */
-        require(price <= MAX_UNIT_PRICE_DRIFT, "Vault: Price exceeds max");
-        require(price >= MIN_UNIT_PRICE_DRIFT, "Vault: Price under min");
-
-        if (isMint) {
-            /* Never price a normalized unit price for more than one
-             * unit of OETH/OUSD when minting.
-             */
-            if (price > 1e18) {
-                price = 1e18;
-            }
-            require(price >= MINT_MINIMUM_UNIT_PRICE, "Asset price below peg");
-        } else {
-            /* Never give out more than 1 normalized unit amount of assets
-             * for one unit of OETH/OUSD when redeeming.
-             */
-            if (price < 1e18) {
-                price = 1e18;
-            }
-        }
-    }
-
-    function _getDecimals(address _asset)
-        internal
-        view
-        returns (uint256 decimals)
-    {
-        decimals = assets[_asset].decimals;
-        require(decimals > 0, "Decimals not cached");
     }
 
     /**
@@ -559,12 +431,20 @@ contract TreasuryCore is TreasuryInitializer {
     /**
      * @notice Gets the vault configuration of a supported asset.
      */
-    function getAssetConfig(address _asset)
+    function getRedeemAssetConfig(address _asset)
         public
         view
-        returns (Asset memory config)
+        returns (TreasuryAsset memory config)
     {
-        config = assets[_asset];
+        config = redeemBasketAssets[_asset];
+    }
+
+    function getUnRedeemAssetConfig(address _asset)
+        public
+        view
+        returns (TreasuryAsset memory config)
+    {
+        config = unredeemBasketAssets[_asset];
     }
 
     /**
@@ -573,35 +453,25 @@ contract TreasuryCore is TreasuryInitializer {
     function getAllAssets() external view returns (address[] memory) {
         return allAssets;
     }
-
-    /**
-     * @notice Return the number of strategies active on the Vault.
-     */
-    function getRebalancingCount() external view returns (uint256) {
-        return allRebalancing.length;
-    }
-
-    /**
-     * @notice Return the array of all strategies
-     */
-    function getAllRebalancing() external view returns (address[] memory) {
-        return allRebalancing;
-    }
+    
 
     /**
      * @notice Returns whether the vault supports the asset
      * @param _asset address of the asset
      * @return true if supported
      */
-    function isSupportedAsset(address _asset) external view returns (bool) {
-        return assets[_asset].isSupported;
+    function isSupportedAssetInRedeem(address _asset) external view returns (bool) {
+        return redeemBasketAssets[_asset].isSupported;
+    }
+
+    function isSupportedAssetInUnRedeem(address _asset) external view returns (bool) {
+        return unredeemBasketAssets[_asset].isSupported;
     }
 
     /**
      * @dev Falldown to the admin implementation
      * @notice This is a catch all for all functions not declared in core
      */
-    // solhint-disable-next-line no-complex-fallback
     fallback() external {
         bytes32 slot = adminImplPosition;
         // solhint-disable-next-line no-inline-assembly
