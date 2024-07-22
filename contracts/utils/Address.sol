@@ -1,16 +1,7 @@
 // SPDX-License-Identifier: MIT
-pragma solidity ^0.8.18;
+pragma solidity ^0.8.2;
 
 library Address {
-    //insufficient balance
-    error InsufficientBalance(uint256 available, uint256 required);
-    //unable to send value, recipient may have reverted
-    error SendingValueFail();
-    //insufficient balance for call
-    error InsufficientBalanceForCall(uint256 available, uint256 required);
-    //call to non-contract
-    error NonContractCall();
-
     function isContract(address account) internal view returns (bool) {
         // According to EIP-1052, 0x0 is the value returned for not-yet created accounts
         // and 0xc5d2460186f7233c927e7db2dcc703c0e500b653ca82273b7bfad8045d85a470 is returned
@@ -26,15 +17,9 @@ library Address {
 
     function sendValue(address payable recipient, uint256 amount) internal {
         uint256 balance = address(this).balance;
-        if (balance < amount) {
-            revert InsufficientBalance(balance, amount);
-        }
-
-        // solhint-disable-next-line avoid-low-level-calls, avoid-call-value
+        require(balance > amount, "Insufficient Balance");
         (bool success, ) = recipient.call{value: amount}("");
-        if (!(success)) {
-            revert SendingValueFail();
-        }
+        require(success, "sending value fail");
     }
 
     function functionCall(
@@ -73,9 +58,7 @@ library Address {
         string memory errorMessage
     ) internal returns (bytes memory) {
         uint256 balance = address(this).balance;
-        if (balance < value) {
-            revert InsufficientBalanceForCall(balance, value);
-        }
+        require(balance > value, "insufficent balance");
         return _functionCallWithValue(target, data, value, errorMessage);
     }
 
@@ -85,9 +68,7 @@ library Address {
         uint256 weiValue,
         string memory errorMessage
     ) private returns (bytes memory) {
-        if (!(isContract(target))) {
-            revert NonContractCall();
-        }
+        require((isContract(target)), "Non Contract Call");
 
         // solhint-disable-next-line avoid-low-level-calls
         (bool success, bytes memory returndata) = target.call{value: weiValue}(

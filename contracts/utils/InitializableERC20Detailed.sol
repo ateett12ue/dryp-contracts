@@ -1,9 +1,8 @@
 // SPDX-License-Identifier: MIT
-pragma solidity ^0.8.18;
+pragma solidity ^0.8.2;
 
 import "@openzeppelin/contracts-upgradeable/token/ERC20/ERC20Upgradeable.sol";
 import "@openzeppelin/contracts-upgradeable/token/ERC20/extensions/ERC20BurnableUpgradeable.sol";
-import "@openzeppelin/contracts-upgradeable/security/PausableUpgradeable.sol";
 import "@openzeppelin/contracts-upgradeable/access/OwnableUpgradeable.sol";
 import "@openzeppelin/contracts-upgradeable/proxy/utils/Initializable.sol";
 /**
@@ -11,7 +10,7 @@ import "@openzeppelin/contracts-upgradeable/proxy/utils/Initializable.sol";
  * Converted from openzeppelin/contracts/token/ERC20/ERC20Detailed.sol
  * @author Ateet Tiwari
  */
-abstract contract InitializableERC20Detailed is Initializable, ERC20Upgradeable, ERC20BurnableUpgradeable, PausableUpgradeable, OwnableUpgradeable  {
+abstract contract InitializableERC20Detailed is Initializable, ERC20Upgradeable, ERC20BurnableUpgradeable, OwnableUpgradeable  {
     // Storage gap to skip storage from prior to OUSD reset
     uint256[100] private _____gap;
 
@@ -33,16 +32,16 @@ abstract contract InitializableERC20Detailed is Initializable, ERC20Upgradeable,
         _name = nameArg;
         _symbol = symbolArg;
         _decimals = decimalsArg;
-        __ERC20_init(_name, _symbol)
+        __ERC20_init(_name, _symbol);
         __ERC20Burnable_init();
-        __Pausable_init();
+        // __Pausable_init();
         __Ownable_init();
     }
 
     /**
      * @notice Returns the name of the token.
      */
-    function name() public view returns (string memory) {
+    function name() public view override returns (string memory) {
         return _name;
     }
 
@@ -50,30 +49,30 @@ abstract contract InitializableERC20Detailed is Initializable, ERC20Upgradeable,
      * @notice Returns the symbol of the token, usually a shorter version of the
      * name.
      */
-    function symbol() public view returns (string memory) {
+    function symbol() public view override returns (string memory) {
         return _symbol;
     }
 
     /**
      * @notice Returns the number of decimals used to get its user representation.
      */
-    function decimals() public view returns (uint8) {
+    function decimals() public view override returns (uint8) {
         return _decimals;
     }
 
-    /**
-     * @notice Returns the pause state of the token
-     * name.
-     */
-    function pause() public onlyOwner {
-        _pause();
-    }
+    ///**
+    //  * @notice Returns the pause state of the token
+    //  * name.
+    //  */
+    // function pause() public onlyOwner {
+    //     _pause();
+    // }
 
-    /**
-     * @notice Returns the unpause state of the token
-     * name.
-     */
-    function unpause() public onlyOwner {
-        _unpause();
-    }
+    // /**
+    //  * @notice Returns the unpause state of the token
+    //  * name.
+    //  */
+    // function unpause() public onlyOwner {
+    //     _unpause();
+    // }
 }

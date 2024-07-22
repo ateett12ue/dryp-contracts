@@ -1,14 +1,14 @@
 /**
 * SPDX-License-Identifier: Apache-2.0
 */
-pragma solidity ^0.8.18;
-import { Ownable } from "./Ownable.sol";
+pragma solidity ^0.8.2;
+import {AccessControl} from "@openzeppelin/contracts/access/AccessControl.sol";
 
 /**
  * @title Blacklistable Token
  * @dev Allows accounts to be blacklisted by a "blacklister" role
  */
-abstract contract Blacklistable is Ownable {
+abstract contract Blacklistable is AccessControl {
     address public blacklister;
     mapping(address => bool) internal _deprecatedBlacklisted;
 
@@ -70,7 +70,7 @@ abstract contract Blacklistable is Ownable {
      * @notice Updates the blacklister address.
      * @param _newBlacklister The address of the new blacklister.
      */
-    function updateBlacklister(address _newBlacklister) external onlyOwner {
+    function updateBlacklister(address _newBlacklister) external {
         require(
             _newBlacklister != address(0),
             "Blacklistable: new blacklister is the zero address"
