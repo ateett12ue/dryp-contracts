@@ -1,12 +1,11 @@
 // SPDX-License-Identifier: MIT
-pragma solidity ^0.8.0;
+pragma solidity ^0.8.2;
 
 /**
- * @title OUSD VaultInitializer Contract
- * @notice The VaultInitializer sets up the initial contract.
- * @author Origin Protocol Inc
+ * @title  Treasury Contract
+ * @author Ateet Tiwari
  */
 import { TreasuryInitializer } from "./TreasuryInitializer.sol";
-import { TreasuryControl } from "./TreasuryControl.sol";
+import { TreasuryController } from "./TreasuryControl.sol";
 
-contract Treasury is TreasuryInitializer, TreasuryControl {}
+contract Treasury is TreasuryInitializer, TreasuryController {}

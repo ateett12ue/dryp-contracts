@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: MIT
-pragma solidity ^0.8.0;
+pragma solidity ^0.8.2;
 
 /**
  * @title DRYP Treasury Controller
@@ -7,44 +7,42 @@ pragma solidity ^0.8.0;
  */
 
 import { SafeERC20 } from "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
-import { ISwapper } from "../interfaces/ISwapper.sol";
-import { IVault } from "../interfaces/IVault.sol";
-import { StableMath } from "../utils/UtilMath.sol";
+import { UtilMath } from "../../utils/UtilMath.sol";
 
 import "./TreasuryStorage.sol";
 
 contract TreasuryController is TreasuryStorage {
     using SafeERC20 for IERC20;
-    using StableMath for uint256;
+    using UtilMath for uint256;
 
     /***************************************
                  Configuration
     ****************************************/
 
     /**
-     * @notice Set address of price provider.
-     * @param _priceProvider Address of price provider
+     * @notice Set address of initial treasury setup
      */
 
-    function initializeTreasury(address[] _assets, uint8[] _decimals, uint16[] _allocatPercentage, uint256[] _price) external onlyRole(TREASURY_MANAGER) {
+    function initializeTreasury(address[] calldata _assets, uint8[] calldata _decimals, uint16[] calldata _allocatPercentage, uint256[] calldata _price) external onlyRole(TREASURY_MANAGER) {
         require(treasuryStarted == false, "treasury already started");
         
-        for (uint256 i = 0; i < _assets; ++i) {
-            _AddAsset(_assets[i], _decimals[i], _allocatPercentage[i], _price[i]);
+        uint256 assetCount = _assets.length;
+        for (uint256 i = 0; i < assetCount; ++i) {
+            _addAsset(_assets[i], _decimals[i], _allocatPercentage[i], _price[i]);
         }
         treasuryStarted = true;
     }
 
     function updateDrypAddress(address newDrypAddress) external onlyRole(TREASURY_MANAGER) returns(bool)
     {
-        _dryp = DRYP(newDrypAddress);
-        return true
+        _dryp = Dryp(newDrypAddress);
+        return true;
     }
 
     function updateDrypPoolAddress(address newDrypPool) external onlyRole(TREASURY_MANAGER) returns(bool)
     {
-        _drypPool = DRYP(newDrypPool);
-        return true
+        _drypPool = newDrypPool;
+        return true;
     }
 
     /***************************************
@@ -60,7 +58,7 @@ contract TreasuryController is TreasuryStorage {
         external
         onlyRole(TREASURY_MANAGER)
     {
-        _AddAsset(_asset, _decimals, _allocatedPercentage, _price)
+        _addAsset(_asset, _decimals, _allocatedPercentage, _price);
     }
 
     function _addAsset(address _asset, uint8 _decimals, uint16 _allocatedPercentage, uint256 _price)
@@ -89,14 +87,14 @@ contract TreasuryController is TreasuryStorage {
         emit AssetAdded(_asset);
     }
 
-    function addMintingToken(address _asset,address _megaPool, uint8 _decimals, string memory _symbol, uint256 _price)
+    function addMintingToken(address _asset,string memory _symbol, uint8 _decimals, uint256 _price)
         external
         onlyRole(TREASURY_MANAGER)
     {
-        _AddMintingAsset(_asset, _decimals, _allocatedPercentage, _price)
+        _addMintingAsset(_asset, _decimals, _symbol, _price);
     }
 
-    function _addMintingAsset(address _asset,address _megaPool, uint8 _decimals, string memory _symbol, uint256 _price)
+    function _addMintingAsset(address _asset, uint8 _decimals, string memory _symbol, uint256 _price)
         internal
     {
         require(!mintTokens[_asset].isSupported, "Asset already supported as Exchange Token");
@@ -104,7 +102,7 @@ contract TreasuryController is TreasuryStorage {
         mintTokens[_asset] = ExchangeToken({
             isSupported: true,
             allowed: true,
-            megaPool: _megaPool,
+            megaPool: address(0),
             decimals: _decimals,
             maxAllowed: 0,
             symbol: _symbol,
@@ -116,33 +114,19 @@ contract TreasuryController is TreasuryStorage {
     }
 
 
-    function removeMintingToken(address _asset,address _megaPool, uint8 _decimals, string memory _symbol, uint256 _price)
+    function removeMintingToken(address _asset)
         external
         onlyRole(TREASURY_MANAGER)
     {
-        _AddMintingAsset(_asset, _decimals, _allocatedPercentage, _price)
+        _removeMintingAsset(_asset);
     }
 
     function _removeMintingAsset(address _asset) internal {
         require(mintTokens[_asset].isSupported, "Asset not supported for minting");
         require(
-            IVault(address(this)).checkBalance(_asset) <= 1e13,
-            "Vault still holds asset"
+            IERC20(_asset).balanceOf(address(this)) <= 1e13,
+            "Treasury still holds asset"
         );
-
-        uint256 assetsCount = mintTokens.length;
-        uint256 assetIndex = assetsCount; // initialize at invaid index
-        for (uint256 i = 0; i < assetsCount; ++i) {
-            if (mintTokens[_asset].allowed) {
-                assetIndex = i;
-                break;
-            }
-        }
-
-        // Note: If asset is not found in `allAssets`, the following line
-        // will revert with an out-of-bound error. However, there's no
-        // reason why an asset would have `Asset.isSupported = true` but
-        // not exist in `allAssets`.
 
         delete mintTokens[_asset];
 
@@ -161,8 +145,8 @@ contract TreasuryController is TreasuryStorage {
         require(redeemBasketAssets[_asset].isSupported, "Asset not supported in redeem basket");
         require(unredeemBasketAssets[_asset].isSupported, "Asset not supported in unredeem basket");
         require(
-            IVault(address(this)).checkBalance(_asset) <= 1e13,
-            "Vault still holds asset"
+            IERC20(_asset).balanceOf(address(this)) <= 1e13,
+            "Treasury still holds asset"
         );
 
         uint256 assetsCount = allAssets.length;
@@ -189,97 +173,86 @@ contract TreasuryController is TreasuryStorage {
         emit AssetRemoved(_asset);
     }
 
-    function depositToRedeemableBasket() external onlyRole(TREASURY_MANAGER) {
-        _depositToRedeemableBasket()
+    function depositToRedeemableBasket(address[] calldata _assets,
+        uint256[] calldata _amounts) external onlyRole(TREASURY_MANAGER) {
+        _depositToRedeemableBasket(_assets, _amounts);
     }
 
 
     function _depositToRedeemableBasket(
-        address _strategyToAddress,
         address[] calldata _assets,
         uint256[] calldata _amounts
     ) internal {
-        require(
-            strategies[_strategyToAddress].isSupported,
-            "Invalid to Strategy"
-        );
+        
         require(_assets.length == _amounts.length, "Parameter length mismatch");
 
         uint256 assetCount = _assets.length;
         for (uint256 i = 0; i < assetCount; ++i) {
+            require( redeemBasketAssets[_assets[i]].isSupported, "Invalid to token");
             address assetAddr = _assets[i];
-            require(
-                IStrategy(_strategyToAddress).supportsAsset(assetAddr),
-                "Asset unsupported"
-            );
             // Send required amount of funds to the strategy
-            IERC20(assetAddr).safeTransfer(_strategyToAddress, _amounts[i]);
+            IERC20(assetAddr).safeTransferFrom(treasury_manager, address(this), _amounts[i]);
         }
-
-        // Deposit all the funds that have been sent to the strategy
-        IStrategy(_strategyToAddress).depositAll();
     }
 
-    function depositToUnRedeemableBasket() external onlyRole(TREASURY_MANAGER) {
-        _depositToUnRedeemableBasket()
+    function depositToUnRedeemableBasket(address[] calldata _assets,
+        uint256[] calldata _amounts) external onlyRole(TREASURY_MANAGER) {
+        _depositToUnRedeemableBasket(_assets, _amounts);
     }
 
     function _depositToUnRedeemableBasket(
-        address _strategyToAddress,
         address[] calldata _assets,
         uint256[] calldata _amounts
     ) internal {
-        require(
-            strategies[_strategyToAddress].isSupported,
-            "Invalid to Strategy"
-        );
         require(_assets.length == _amounts.length, "Parameter length mismatch");
-
         uint256 assetCount = _assets.length;
         for (uint256 i = 0; i < assetCount; ++i) {
+            require( unredeemBasketAssets[_assets[i]].isSupported, "Invalid token");
             address assetAddr = _assets[i];
-            require(
-                IStrategy(_strategyToAddress).supportsAsset(assetAddr),
-                "Asset unsupported"
-            );
             // Send required amount of funds to the strategy
-            IERC20(assetAddr).safeTransfer(_strategyToAddress, _amounts[i]);
+            IERC20(assetAddr).safeTransferFrom(treasury_manager, address(this), _amounts[i]);
         }
-
-        // Deposit all the funds that have been sent to the strategy
-        IStrategy(_strategyToAddress).depositAll();
     }
 
     /**
      * @notice Withdraw multiple assets from the strategy to the vault.
-     * @param _strategyFromAddress Address of the Strategy to withdraw assets from.
-     * @param _assets Array of asset address that will be withdrawn from the strategy.
-     * @param _amounts Array of amounts of each corresponding asset to withdraw.
+     * @param _asset asset address that will be withdrawn from the strategy.
+     * @param _amount amounts of each corresponding asset to withdraw.
      */
     function withdrawFromUnredeemableBaseket(
-        address _strategyFromAddress,
-        address[] calldata _assets,
-        uint256[] calldata _amounts
+        address _asset,
+        uint256 _amount
     ) external onlyRole(TREASURY_MANAGER) nonReentrant {
         _withdrawFromUnredeemableBaseket(
-            address(this),
-            _strategyFromAddress,
-            _assets,
-            _amounts
+            _asset,
+            _amount
         );
     }
 
+    function _withdrawFromUnredeemableBaseket(
+        address _asset,
+        uint256 _amount
+    )internal {
+         require(unredeemBasketAssets[_asset].isSupported, "Invalid token");
+         IERC20(_asset).safeTransferFrom(address(this), treasury_manager, _amount);
+    }
+
     function withdrawFromredeemableBaseket(
-        address _strategyFromAddress,
-        address[] calldata _assets,
-        uint256[] calldata _amounts
+        address _asset,
+        uint256 _amount
     ) external onlyRole(TREASURY_MANAGER) nonReentrant {
         _withdrawFromredeemableBaseket(
-            address(this),
-            _strategyFromAddress,
-            _assets,
-            _amounts
+            _asset,
+            _amount
         );
+    }
+
+    function _withdrawFromredeemableBaseket(
+        address _asset,
+        uint256 _amount
+    )internal {
+         require(redeemBasketAssets[_asset].isSupported, "Invalid token");
+         IERC20(_asset).safeTransferFrom(address(this), treasury_manager, _amount);
     }
 
     /***************************************
@@ -332,17 +305,17 @@ contract TreasuryController is TreasuryStorage {
         external
         onlyRole(TREASURY_MANAGER)
     {
-        _transferToken(_asset, _amount)
+        _transferToken(_asset, _amount);
     }
 
     function _transferToken(address _asset, uint256 _amount)
         internal
     {
-        require(!assets[_asset].isSupported, "Only unsupported assets");
+        require(!redeemBasketAssets[_asset].isSupported, "Only unsupported assets");
         IERC20(_asset).safeTransfer(treasury_manager, _amount);
     }
 
-    function treasury_manager() external view returns (address memory) {
+    function _treasury_manager() external view returns (address) {
         return treasury_manager;
     }
 
@@ -351,8 +324,7 @@ contract TreasuryController is TreasuryStorage {
     ****************************************/
 
     /**
-     * @notice Withdraws all assets from the strategy and sends assets to the Vault.
-     * @param _strategyAddr Strategy address.
+     * @notice Withdraws all assets from non redeem basket.
      */
     function withdrawAllFromNonRedeemBasket()
         external
@@ -362,9 +334,9 @@ contract TreasuryController is TreasuryStorage {
         for (uint256 i = 0; i < assetLeng; ++i) {
             if(unredeemBasketAssets[allAssets[i]].isSupported)
             {
-                if(ERC20(allAssets[i]).balanceOf(this))
+                if(IERC20(allAssets[i]).balanceOf(address(this)) > 0)
                 {
-                    _transferToken(allAssets[i], ERC20(allAssets[i]).balanceOf(this))
+                    _transferToken(allAssets[i], IERC20(allAssets[i]).balanceOf(address(this)));
                 }
             }
         }
@@ -375,7 +347,7 @@ contract TreasuryController is TreasuryStorage {
     ****************************************/
 
     function _cacheDecimals(address token) internal {
-        Asset storage tokenAsset = redeemBasketAssets[token];
+        TreasuryAsset storage tokenAsset = redeemBasketAssets[token];
         if (tokenAsset.decimals != 0) {
             return;
         }

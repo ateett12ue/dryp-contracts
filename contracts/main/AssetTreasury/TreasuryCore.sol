@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: MIT
-pragma solidity ^0.8.0;
+pragma solidity ^0.8.2;
 
 /**
  * @title DRYP Token TreasuryCore contract
@@ -8,11 +8,9 @@ pragma solidity ^0.8.0;
 
 import { SafeERC20 } from "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
 
-import { UtilMath } from "../../utils/UtilMath";
-import { IOracle } from "../interfaces/IOracle.sol";
-import { IGetExchangeRateToken } from "../interfaces/IGetExchangeRateToken.sol";
+import { UtilMath } from "../../utils/UtilMath.sol";
 
-import "./TresuryInitializer.sol";
+import "./TreasuryInitializer.sol";
 
 contract TreasuryCore is TreasuryInitializer {
     using SafeERC20 for IERC20;
@@ -40,14 +38,6 @@ contract TreasuryCore is TreasuryInitializer {
         _;
     }
 
-    modifier onlyRebalancer() {
-        require(
-            msg.sender == _rebalancer,
-            "Caller is not the OUSD meta strategy"
-        );
-        _;
-    }
-
     modifier onlyWhenTreasuryInitialized() {
         require(
             treasuryStarted == true,
@@ -61,14 +51,14 @@ contract TreasuryCore is TreasuryInitializer {
     /**
      * @notice function to return the address of USDT token.
      */
-    function usdt() public view virtual override returns (address) {
+    function usdt() public view virtual returns (address) {
         return _usdt;
     }
 
     /**
      * @notice function to return the address of USDC token.
      */
-    function usdc() public view virtual override returns (address) {
+    function usdc() public view virtual returns (address) {
         return _usdc;
     }
 
@@ -76,7 +66,7 @@ contract TreasuryCore is TreasuryInitializer {
      * @notice function to return the address of Dexspan.
      */
     function isTokenAllowed(address token) public view returns (bool) {
-        return mintTokens[token];
+        return mintTokens[token].isSupported;
     }
 
     /**
@@ -117,7 +107,8 @@ contract TreasuryCore is TreasuryInitializer {
         require(__amount > 0, "Amount must be greater than 0");
         require(__amount < mintTokens[__asset].maxAllowed, "Amount must be less than maxAllowed");
 
-        uint256 priceAdjustedDeposit = _drypPool.getDrypAmount(__amount);
+        // uint256 priceAdjustedDeposit = _drypPool.getDrypAmount(__amount);
+        uint256 priceAdjustedDeposit = 1;
 
         if (__minimumDrypAmount > 0) {
             require(
@@ -133,13 +124,13 @@ contract TreasuryCore is TreasuryInitializer {
         // Transfer the deposited coins to the treasury as revenue
         IERC20 asset = IERC20(__asset);
         asset.safeTransferFrom(msg.sender, address(this), __amount);
-        revenue[__asset] = amount;
+        revenue[__asset] = __amount;
     }
 
     /**
      * @notice Withdraw a supported asset and burn Dryp.
-     * @param _amount Amount of Dryp to burn
-     * @param _minimumUnitAmount Minimum stablecoin units to receive in return
+     * @param _amount Amount of Asset to withdraw
+     * @param _recipient Recipient of funds
      */
     function redeemAssets(uint256 _amount, address _recipient)
         external
@@ -148,13 +139,12 @@ contract TreasuryCore is TreasuryInitializer {
         onlyWhenTreasuryInitialized
         onlyRole(TREASURY_MANAGER)
     {
-        _redeem(_amount, _minimumUnitAmount, _recipient);
+        _redeem(_amount, _recipient);
     }
 
     /**
      * @notice Withdraw a supported asset and burn Dryp.
      * @param __amount Amount of Dryp to burn
-     * @param __minimumUnitAmount Minimum stablecoin units to receive in re
      * @param __recipient user getting funds
      */
     function _redeem(uint256 __amount, address __recipient)
@@ -162,7 +152,8 @@ contract TreasuryCore is TreasuryInitializer {
         virtual
     {  
         require(__amount > 0, "Redeem amount must be greater than 0");
-        uint256 usdtRedeemValue = _drypPool.getRedeemValue(__amount);
+        // uint256 usdtRedeemValue = _drypPool.getRedeemValue(__amount);
+        uint256 usdtRedeemValue = 1;
         uint256[] memory outputs = _calculateRedeemOutputs(__amount);
 
         emit Redeem(__recipient, __amount);
@@ -175,9 +166,9 @@ contract TreasuryCore is TreasuryInitializer {
             address assetAddr = allAssets[i];
             
             uint256 assetBalance = IERC20(assetAddr).balanceOf(address(this));
-            if(output[i] > assetBalance)
+            if(outputs[i] > assetBalance)
             {
-                revert("not available for redeem")
+                revert("not available for redeem");
             }
             if (IERC20(assetAddr).balanceOf(address(this)) >= outputs[i]) {
                 IERC20(assetAddr).safeTransfer(__recipient, outputs[i]);
@@ -187,20 +178,20 @@ contract TreasuryCore is TreasuryInitializer {
         }
 
         // send back from user to dryp
-        dryp.burn(__recipient, __amount);
+        _dryp.burn(address(__recipient), __amount);
 
         _postRedeem(outputs);
     }
 
-    function _postRedeem(uint256[] outputs) internal {
+    function _postRedeem(uint256[] memory outputs) internal {
         uint256 assetCount = allAssets.length;
-        uint256 vaultValue = _totalValue();
+        uint256 vaultValue = totalValue();
         for (uint256 i = 0; i < assetCount; ++i) {
             if (outputs[i] == 0) continue;
 
             address assetAddr = allAssets[i];
             uint256 assetUsdtValue = redeemBasketAssets[address(assetAddr)].priceInUsdt;
-            uint256 outputValueInUsdt = _toUnitsPrice(redeemBasketAssets[address(assetAddr)].decimal, output[i])
+            uint256 outputValueInUsdt = _toUnitsPrice(redeemBasketAssets[address(assetAddr)].decimals, outputs[i]);
             uint256 assetValueRedeemed = outputValueInUsdt*assetUsdtValue;
             vaultValue = vaultValue - assetValueRedeemed;  
         }
@@ -210,7 +201,7 @@ contract TreasuryCore is TreasuryInitializer {
         }
         else
         {
-            revert("vault emptied")
+            revert("vault emptied");
         }
     }
 
@@ -219,8 +210,12 @@ contract TreasuryCore is TreasuryInitializer {
      *         strategies.
      * @return value Total value in USD/ETH (1e18)
      */
-    function totalValue() external view virtual onlyWhenTreasuryInitialized returns (uint256 value) {
-        value = _totalValue();
+    function totalValue() public view virtual onlyWhenTreasuryInitialized returns (uint256 value) {
+        value = _totalValue;
+    }
+
+    function updateTotalValue(uint256 amount) public onlyWhenTreasuryInitialized {
+        _totalValue = amount;
     }
 
     /**
@@ -231,10 +226,10 @@ contract TreasuryCore is TreasuryInitializer {
     function _totalValueRedeemable() public view virtual onlyWhenTreasuryInitialized returns (uint256 value) {
         uint256 assetCount = allAssets.length;
         for (uint256 i = 0; i < assetCount; ++i) {
-            address assetAddr = allAssets[y];
+            address assetAddr = allAssets[i];
             uint256 balance = IERC20(assetAddr).balanceOf(address(this));
             if (balance > 0) {
-                uint256 outputValueInUsdt = _toUnitsPrice(redeemBasketAssets[address(assetAddr)].decimal, balance);
+                uint256 outputValueInUsdt = _toUnitsPrice(redeemBasketAssets[address(assetAddr)].decimals, balance);
                 value += outputValueInUsdt*redeemBasketAssets[address(assetAddr)].priceInUsdt;
             }
         }
@@ -247,10 +242,10 @@ contract TreasuryCore is TreasuryInitializer {
     function _totalValueNoRedeemable() public view virtual onlyWhenTreasuryInitialized returns (uint256 value) {
         uint256 assetCount = allAssets.length;
         for (uint256 i = 0; i < assetCount; ++i) {
-            address assetAddr = allAssets[y];
+            address assetAddr = allAssets[i];
             uint256 balance = IERC20(assetAddr).balanceOf(address(this));
             if (balance > 0) {
-                uint256 outputValueInUsdt = _toUnitsPrice(unredeemBasketAssets[address(assetAddr)].decimal, balance);
+                uint256 outputValueInUsdt = _toUnitsPrice(unredeemBasketAssets[address(assetAddr)].decimals, balance);
                 value += outputValueInUsdt*unredeemBasketAssets[address(assetAddr)].priceInUsdt;
             }
         }
@@ -258,7 +253,7 @@ contract TreasuryCore is TreasuryInitializer {
 
     function _totalValueLocked() public view onlyWhenTreasuryInitialized returns (uint256 value) {
         uint256 lockedRevenue =  IERC20(_usdt).balanceOf(address(this));
-        return lockedRevenue
+        return lockedRevenue;
     }
 
 
@@ -284,8 +279,7 @@ contract TreasuryCore is TreasuryInitializer {
         returns (uint256 balance)
     {
         IERC20 asset = IERC20(_asset);
-        uint256 balance = asset.balanceOf(address(this));
-        return balance
+        return asset.balanceOf(address(this));
     }
 
     /**
@@ -322,9 +316,9 @@ contract TreasuryCore is TreasuryInitializer {
         uint256 totalUnits = 0;
         for (uint256 i = 0; i < assetCount; ++i) {
             address assetAddr = allAssets[i];
-            TreasuryAsset memory asset = redeemBasketAssets[assetAddress];
+            TreasuryAsset memory asset = redeemBasketAssets[assetAddr];
             if (asset.isSupported) {
-                totalUsdtValue += (asset.priceInUsdt * asset.allotedPercentage) / 100;
+                totalUsdtValue += (asset.priceInUsdt * asset.allotatedPercentange) / 100;
             }
         }
         // Calculate totalOutputRatio
@@ -332,9 +326,9 @@ contract TreasuryCore is TreasuryInitializer {
             address assetAddress = allAssets[i];
             TreasuryAsset memory asset = redeemBasketAssets[assetAddress];
             if (asset.isSupported) {
-                uint256 assetValueInUsdt = (asset.priceInUsdt * asset.allotedPercentage) / 100;
-                uint256 amountToRedeem = (redeemAmount * assetValueInUsdt) / totalUsdtValue;
-                outputs[i] = amountToRedeem
+                uint256 assetValueInUsdt = (asset.priceInUsdt * asset.allotatedPercentange) / 100;
+                uint256 amountToRedeem = (_amount * assetValueInUsdt) / totalUsdtValue;
+                outputs[i] = amountToRedeem;
             }
         }
         return outputs;
@@ -344,80 +338,65 @@ contract TreasuryCore is TreasuryInitializer {
                     Pricing
     ****************************************/
 
-    /**
-     * @notice Returns the total price in 18 digit units for a given asset.
-     *      Never goes above 1, since that is how we price mints.
-     * @param asset address of the asset
-     * @return price uint256: unit (USD / ETH) price for 1 unit of the asset, in 18 decimal fixed
-     */
-    function priceUnitMint(address asset)
-        external
-        view
-        returns (uint256 price)
-    {
-        /* need to supply 1 asset unit in asset's decimals and can not just hard-code
-         * to 1e18 and ignore calling `_toUnits` since we need to consider assets
-         * with the exchange rate
-         */
-        uint256 units = _toUnits(
-            uint256(1e18).scaleBy(_getDecimals(asset), 18),
-            asset
-        );
-        price = (_toUnitPrice(asset, true) * units) / 1e18;
-    }
+    // /**
+    //  * @notice Returns the total price in 18 digit units for a given asset.
+    //  *      Never goes above 1, since that is how we price mints.
+    //  * @param asset address of the asset
+    //  * @return price uint256: unit (USD / ETH) price for 1 unit of the asset, in 18 decimal fixed
+    //  */
+    // function priceUnitMint(address asset)
+    //     external
+    //     view
+    //     returns (uint256 price)
+    // {
+    //     /* need to supply 1 asset unit in asset's decimals and can not just hard-code
+    //      * to 1e18 and ignore calling `_toUnits` since we need to consider assets
+    //      * with the exchange rate
+    //      */
+    //     uint256 units = _toUnits(
+    //         uint256(1e18).scaleBy(_getDecimals(asset), 18),
+    //         asset
+    //     );
+    //     price = (_toUnitPrice(asset, true) * units) / 1e18;
+    // }
 
-    /**
-     * @notice Returns the total price in 18 digit unit for a given asset.
-     *      Never goes below 1, since that is how we price redeems
-     * @param asset Address of the asset
-     * @return price uint256: unit (USD / ETH) price for 1 unit of the asset, in 18 decimal fixed
-     */
-    function priceUnitRedeem(address asset)
-        external
-        view
-        returns (uint256 price)
-    {
-        /* need to supply 1 asset unit in asset's decimals and can not just hard-code
-         * to 1e18 and ignore calling `_toUnits` since we need to consider assets
-         * with the exchange rate
-         */
-        uint256 units = _toUnits(
-            uint256(1e18).scaleBy(_getDecimals(asset), 18),
-            asset
-        );
-        price = (_toUnitPrice(asset, false) * units) / 1e18;
-    }
+    // /**
+    //  * @notice Returns the total price in 18 digit unit for a given asset.
+    //  *      Never goes below 1, since that is how we price redeems
+    //  * @param asset Address of the asset
+    //  * @return price uint256: unit (USD / ETH) price for 1 unit of the asset, in 18 decimal fixed
+    //  */
+    // function priceUnitRedeem(address asset)
+    //     external
+    //     view
+    //     returns (uint256 price)
+    // {
+    //     /* need to supply 1 asset unit in asset's decimals and can not just hard-code
+    //      * to 1e18 and ignore calling `_toUnits` since we need to consider assets
+    //      * with the exchange rate
+    //      */
+    //     uint256 units = _toUnits(
+    //         uint256(1e18).scaleBy(_getDecimals(asset), 18),
+    //         asset
+    //     );
+    //     price = (_toUnitPrice(asset, false) * units) / 1e18;
+    // }
 
     /***************************************
                     Utils
     ****************************************/
 
-    /**
-     * @dev Convert a quantity of a token into 1e18 fixed decimal "units"
-     * in the underlying base (USD/ETH) used by the vault.
-     * Price is not taken into account, only quantity.
-     *
-     * Examples of this conversion:
-     *
-     * - 1e18 DAI becomes 1e18 units (same decimals)
-     * - 1e6 USDC becomes 1e18 units (decimal conversion)
-     * - 1e18 rETH becomes 1.2e18 units (exchange rate conversion)
-     *
-     * @param _raw Quantity of asset
-     * @param _asset Core Asset address
-     * @return value 1e18 normalized quantity of units
-     */
     function _toUnitsPrice( uint256 _decimal, uint256 _amount)
         internal
         view
         returns (uint256)
     {
         uint256 usdtDecimal = 6;
-        if (assetDecimal == 6) {
+        if (_decimal == 6) {
             return _amount;
         } else{
            uint256 _rawAdjusted= _amount.scaleBy(6, _decimal);
-           return _rawAdjusted
+           return _rawAdjusted;
         }
     }
 
@@ -445,13 +424,6 @@ contract TreasuryCore is TreasuryInitializer {
         returns (TreasuryAsset memory config)
     {
         config = unredeemBasketAssets[_asset];
-    }
-
-    /**
-     * @notice Return all vault asset addresses in order
-     */
-    function getAllAssets() external view returns (address[] memory) {
-        return allAssets;
     }
     
 

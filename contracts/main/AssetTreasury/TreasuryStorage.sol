@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: MIT
-pragma solidity ^0.8.0;
+pragma solidity ^0.8.2;
 
 /**
  * @title DRYP Treasury Storage contract
@@ -8,17 +8,13 @@ pragma solidity ^0.8.0;
 
 import { IERC20 } from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import { SafeERC20 } from "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
-import { Address } from "@openzeppelin/contracts/utils/Address.sol";
 import "@openzeppelin/contracts-upgradeable/proxy/utils/Initializable.sol";
-import { Rebalancer } from "../Rebalancer/Rebalance.sol";
-import { DRYP } from "../TreasuryToken/DRYP.sol";
-import { Pool } from "../TokenPool/Pool.sol";
-
+import { Dryp } from "../TreasuryToken/Dryp.sol";
 import {AccessControl} from "@openzeppelin/contracts/access/AccessControl.sol";
 import "../../utils/Helpers.sol";
-import {ReentrancyGuard} from "../../utils/ReentrancyGuard.sol";
+import "@openzeppelin/contracts-upgradeable/security/ReentrancyGuardUpgradeable.sol";
 
-contract TreasuryStorage is Initializable, AccessControl, ReentrancyGuard {
+contract TreasuryStorage is Initializable, AccessControl, ReentrancyGuardUpgradeable {
     using SafeERC20 for IERC20;
 
     // for asset to be added and remove from treasury
@@ -96,9 +92,11 @@ contract TreasuryStorage is Initializable, AccessControl, ReentrancyGuard {
         uint256 priceInUsdt;
     }
 
+bytes32 constant adminImplPosition =
+        0xa161f5e5f89bcd6e5515698cf56639b955fbb2facc2be526b53b6fe50b4a8c27;
 
-    address private immutable _usdt;
-    address private immutable _usdc;
+    address public _usdt;
+    address public _usdc;
 
     address treasury_manager;
     /// @dev list of all assets supported by the treasury.
@@ -126,7 +124,7 @@ contract TreasuryStorage is Initializable, AccessControl, ReentrancyGuard {
     }
 
     /// @dev mapping of Rebalancing contracts to their configiration
-    mapping(address => Rebalancing) internal rebalancing;
+    mapping(address => Rebalancer) internal rebalancing;
 
     /// @dev list of all treasury rebalancing
     address[] internal allRebalancingChanges;
@@ -145,35 +143,42 @@ contract TreasuryStorage is Initializable, AccessControl, ReentrancyGuard {
     uint256 public noredeemBuffer;
 
     /// @dev Address of the Dryp token.
-    DRYP internal _dryp = address(0);
+    Dryp internal _dryp;
 
     /// @dev Address of the Dryp Pool Contract.
-    Pool internal _drypPool = address(0);
+    address internal _drypPool = address(0);
 
     /// @dev Address of the Dryp Rebalancing only Redeem.
-    Rebalancer internal _rebalancer = address(0);
+    Rebalancer internal _rebalancer;
 
 
     bytes32 public constant TREASURY_MANAGER = keccak256("TREASURY_MANAGER");
 
-
+    uint256 _totalValue = 0;
     // constants
     uint256 constant MINT_MINIMUM_UNIT_PRICE = 0.998e18;
     uint256 constant MIN_UNIT_PRICE_DRIFT = 0.7e18;
     uint256 constant MAX_UNIT_PRICE_DRIFT = 1.3e18;
 
-    /**
-     * @notice set the implementation for the admin, this needs to be in a base class else we cannot set it
-     * @param newImpl address of the implementation
-     */
-    function setAdminImpl(address newImpl) external onlyRole(TREASURY_MANAGER) {
-        require(
-            Address.isContract(newImpl),
-            "new implementation is not a contract"
-        );
-        bytes32 position = adminImplPosition;
-        assembly {
-            sstore(position, newImpl)
-        }
+     constructor() {
+        _disableInitializers();
     }
+
+    function initialize() public initializer {
+        __ReentrancyGuard_init();
+    }
+    // /**
+    //  * @notice set the implementation for the admin, this needs to be in a base class else we cannot set it
+    //  * @param newImpl address of the implementation
+    //  */
+    // function setAdminImpl(address newImpl) external onlyRole(TREASURY_MANAGER) {
+    //     require(
+    //         Address.isContract(newImpl),
+    //         "new implementation is not a contract"
+    //     );
+    //     bytes32 position = keccak256(treasury_manager);
+    //     assembly {
+    //         sstore(position, newImpl)
+    //     }
+    // }
 }
