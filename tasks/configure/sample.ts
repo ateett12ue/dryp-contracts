@@ -6,10 +6,7 @@ import {
   IDeploymentAdapters,
   getDeployments,
 } from "../utils";
-import {
-  CONTRACT_NAME,
-  DEFAULT_ENV,
-} from "../constants";
+import { CONTRACT_NAME, DEFAULT_ENV } from "../constants";
 import { Sample__factory } from "../../typechain/factories/Sample__factory";
 
 const contractName = CONTRACT_NAME.Sample;
