@@ -1,12 +1,12 @@
 // SPDX-License-Identifier: MIT
-pragma solidity ^0.8.18;
+pragma solidity ^0.8.2;
 
 import {IERC20} from "../interfaces/IERC20.sol";
 import {Address} from "./Address.sol";
-import {SafeMath} from "./SafeMath.sol";
+import {UtilMath} from "./UtilMath.sol";
 
 library SafeERC20 {
-    using SafeMath for uint256;
+    using UtilMath for uint256;
     using Address for address;
 
     function safeTransfer(IERC20 token, address to, uint256 value) internal {
