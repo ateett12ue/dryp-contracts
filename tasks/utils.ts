@@ -3,7 +3,10 @@ import fs from "fs";
 
 export enum ContractType {
   None,
-  Sample
+  Intializable,
+  Token,
+  TokenPool,
+  Treasury
 }
 
 export interface IDeployment {
