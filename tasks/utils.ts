@@ -6,7 +6,8 @@ export enum ContractType {
   Intializable,
   Token,
   TokenPool,
-  Treasury
+  Treasury,
+  Proxy
 }
 
 export interface IDeployment {
@@ -27,9 +28,7 @@ export interface IDeploymentAdapters {
 }
 
 const getFilePath = (contractType: ContractType): string => {
-  let path = "deployment/deployments.json";
-
-  if (contractType === ContractType.Sample) path = "deployment/sample.json";
+  const path = "deployment/deployments.json";
   return path;
 };
 
@@ -41,9 +40,7 @@ export async function recordAllDeployments(
   address: string
 ): Promise<IDeployment | IDeploymentAdapters> {
   const path = getFilePath(contractType);
-
   const deployment = JSON.parse(fs.readFileSync(path, "utf-8"));
-
   if (contractType === ContractType.None) {
     const deployments: IDeployment = deployment;
 
@@ -59,7 +56,6 @@ export async function recordAllDeployments(
     return deployments;
   } else {
     const deployments: IDeploymentAdapters = deployment;
-
     if (!deployments[env]) {
       deployments[env] = {};
     }

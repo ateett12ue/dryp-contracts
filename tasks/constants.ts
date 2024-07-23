@@ -7,7 +7,8 @@ export const DEPLOY_ERC20_TRANSFER_ADAPTER = "DEPLOY_ERC20_TRANSFER_ADAPTER";
 export const VERIFY_ERC20_TRANSFER_ADAPTER = "VERIFY_ERC20_TRANSFER_ADAPTER";
 export const DEPLOY_SAMPLE = "DEPLOY_SAMPLE";
 export const VERIFY_SAMPLE = "VERIFY_SAMPLE";
-export const DEPLOY_TREASURY_CONTRACT = "TREASURY";
+export const DEPLOY_TREASURY_CONTRACT = "DEPLOY_TREASURY_CONTRACT";
+export const VERIFY_TREASURY_CONTRACT = "VERIFY_TREASURY_CONTRACT";
 export const DEPLOY_TOKEN_CONTRACT = "DEPLOY_TOKEN_CONTRACT";
 export const VERIFY_DEPLOY_TOKEN_CONTRACT = "VERIFY_DEPLOY_TOKEN_CONTRACT";
 
@@ -22,7 +23,9 @@ export const WNATIVE: { [network: string]: { [chainId: string]: string } } = {
 
 export const CONTRACT_NAME: { [key: string]: string } = {
   Treasury: "Treasury",
-  Token: "DRYP",
+  TreasuryProxy: "TreasuryProxy",
+  Token: "Dryp",
+  TokenProxy: "DrypProxy",
 };
 
 export const EXCHANGE_TOKEN: {

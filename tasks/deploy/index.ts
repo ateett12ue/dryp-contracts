@@ -1,2 +1,2 @@
 import "./Token/Token.deploy";
-// import "./Treasury/Treasury.deploy";
+import "./Treasury/Treasury.deploy";
