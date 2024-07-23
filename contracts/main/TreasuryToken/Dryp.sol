@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: MIT
-pragma solidity ^0.8.2;
+pragma solidity ^0.8.0;
 
 /**
  * @title DRYP Token Contract
@@ -8,7 +8,6 @@ pragma solidity ^0.8.2;
  * @author Ateet Tiwari
  */
 import { SafeMath } from "@openzeppelin/contracts/utils/math/SafeMath.sol";
-import { Address } from "@openzeppelin/contracts/utils/Address.sol";
 import "@openzeppelin/contracts-upgradeable/token/ERC20/ERC20Upgradeable.sol";
 import "@openzeppelin/contracts-upgradeable/token/ERC20/extensions/ERC20BurnableUpgradeable.sol";
 import "@openzeppelin/contracts-upgradeable/token/ERC20/extensions/ERC20PausableUpgradeable.sol";
@@ -82,7 +81,7 @@ contract Dryp is Initializable, ERC20Upgradeable, ERC20BurnableUpgradeable, ERC2
         __Ownable_init();
         treasuryManagerAddress = msg.sender;
         admin = msg.sender;
-        _mint(msg.sender, 1000 * 10 ** decimals());
+        // _mint(msg.sender, 1000 * 10 ** decimals());
     }
 
     /**
