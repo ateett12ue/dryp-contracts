@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: MIT
-pragma solidity ^0.8.2;
+pragma solidity ^0.8.0;
 
 /**
  * @title DRYP Treasury Controller
@@ -23,7 +23,7 @@ contract TreasuryController is TreasuryStorage {
      * @notice Set address of initial treasury setup
      */
 
-    function initializeTreasury(address[] calldata _assets, uint8[] calldata _decimals, uint16[] calldata _allocatPercentage, uint256[] calldata _price) external onlyRole(TREASURY_MANAGER) {
+    function startTreasury(address[] calldata _assets, uint8[] calldata _decimals, uint16[] calldata _allocatPercentage, uint256[] calldata _price) external onlyRole(TREASURY_MANAGER) {
         require(treasuryStarted == false, "treasury already started");
         
         uint256 assetCount = _assets.length;

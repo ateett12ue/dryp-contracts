@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: MIT
-pragma solidity ^0.8.2;
+pragma solidity ^0.8.0;
 
 /**
  * @title DRYP Treasury Storage contract
@@ -160,13 +160,6 @@ bytes32 constant adminImplPosition =
     uint256 constant MIN_UNIT_PRICE_DRIFT = 0.7e18;
     uint256 constant MAX_UNIT_PRICE_DRIFT = 1.3e18;
 
-     constructor() {
-        _disableInitializers();
-    }
-
-    function initialize() public initializer {
-        __ReentrancyGuard_init();
-    }
     // /**
     //  * @notice set the implementation for the admin, this needs to be in a base class else we cannot set it
     //  * @param newImpl address of the implementation

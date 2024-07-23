@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: MIT
-pragma solidity ^0.8.2;
+pragma solidity ^0.8.0;
 
 /**
  * @title Dryp TreasuryInitializer contract
@@ -10,6 +10,10 @@ pragma solidity ^0.8.2;
 import "./TreasuryStorage.sol";
 
 contract TreasuryInitializer is TreasuryStorage {
+    constructor() {
+        _disableInitializers();
+    }
+
     function initialize(address __drypToken, address __drypPool, address __treasuryManager, address __usdc, address __usdt)
         external
         initializer
@@ -21,6 +25,7 @@ contract TreasuryInitializer is TreasuryStorage {
         require(__usdc != address(0), "usdc address is zero");
         require(__usdt != address(0), "usdt address is zero");
 
+        __ReentrancyGuard_init();
         _dryp = Dryp(__drypToken);
         // _drypPool = Pool(__drypPool);
         // _rebalancer = __rebalancer;
